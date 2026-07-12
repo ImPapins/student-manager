@@ -1,0 +1,6 @@
+{
+  "name": "학생 관리",
+  "description": "학생 정보, 반 소속 및 달력 기반 수업 배정을 조율하는 고품격 학생 관리 일정표 시스템입니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
