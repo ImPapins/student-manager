@@ -257,8 +257,16 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     return Object.values(byClass).map((item) => {
       return item.students.length > 0
-        ? { name: item.name, text: `${item.name}: ${item.students.join(", ")}` }
-        : { name: item.name, text: item.name };
+        ? { 
+            name: item.name, 
+            text: `${item.name}: ${item.students.join(", ")}`,
+            shortText: item.students.join(", ")
+          }
+        : { 
+            name: item.name, 
+            text: item.name,
+            shortText: item.name
+          };
     });
   };
 
@@ -389,7 +397,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     onClick={() => onToggleDay(day)}
                     style={isSelected ? undefined : dayStyle}
                     title={tooltip}
-                    className={`relative aspect-square flex flex-col items-center justify-between rounded-lg p-1 select-none transition-all cursor-pointer ${
+                    className={`relative aspect-auto min-h-[52px] xs:min-h-[58px] sm:aspect-square w-full flex flex-col items-center justify-between rounded-lg p-1 select-none transition-all cursor-pointer ${
                       isSelected
                         ? "bg-indigo-600 text-white font-bold ring-2 ring-indigo-300 shadow-md"
                         : "bg-white border border-gray-100 text-gray-800 hover:bg-gray-50"
@@ -401,18 +409,26 @@ export const Calendar: React.FC<CalendarProps> = ({
                     {!isSelected && shouldShowLines && (
                       <div className="w-full flex flex-col gap-0.5 mt-1 overflow-hidden">
                         {hasLessonCount ? (
-                          <span className="text-[9px] leading-none text-indigo-600 font-bold truncate w-full text-center py-0.5 px-0.5 block bg-indigo-50 rounded-sm border border-indigo-100">
+                          <span className="text-[8px] xs:text-[9px] leading-none text-indigo-600 font-bold truncate w-full text-center py-0.5 px-0.5 block bg-indigo-50 rounded-sm border border-indigo-100 tracking-tighter xs:tracking-normal">
                             {lessonCountText}
                           </span>
                         ) : (
                           <>
                             {displayLines.slice(0, 2).map((line, idx) => (
-                              <span
-                                key={idx}
-                                className="text-[8px] leading-tight text-gray-500 truncate w-full text-center px-0.5 font-medium block bg-slate-100/60 rounded-sm"
-                              >
-                                {line.text}
-                              </span>
+                              <div key={idx} className="w-full">
+                                {/* Desktop/Tablet view: show Class Name + Student Name */}
+                                <span
+                                  className="hidden sm:block text-[8px] leading-tight text-gray-500 truncate w-full text-center px-0.5 font-medium bg-slate-100/60 rounded-sm"
+                                >
+                                  {line.text}
+                                </span>
+                                {/* Mobile view: show only Student Name for perfect fit */}
+                                <span
+                                  className="block sm:hidden text-[8px] xs:text-[9px] leading-tight text-indigo-950 truncate w-full text-center px-0.5 font-bold bg-slate-100/80 rounded-sm tracking-tighter"
+                                >
+                                  {line.shortText || line.text}
+                                </span>
+                              </div>
                             ))}
                             {displayLines.length > 2 && (
                               <span className="text-[7px] text-gray-400 font-bold leading-none">
