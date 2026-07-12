@@ -29,6 +29,12 @@ import { ClassGroup, Student, MainSelections } from "./types";
 import { StudentCard } from "./components/StudentCard";
 import { Calendar } from "./components/Calendar";
 import { downloadStudentCalendarPNG } from "./utils/calendarImageGenerator";
+import { 
+  registerCloudUser, 
+  loginCloudUser, 
+  saveCloudData, 
+  loadCloudData 
+} from "./firebase";
 
 const STORAGE_KEY = "studentManagerData";
 const CLASS_COLOR_PALETTE = [
@@ -131,6 +137,9 @@ export default function App() {
     };
   }, [hasUnsavedChanges]);
 
+  const [isLoadingCloud, setIsLoadingCloud] = useState<boolean>(false);
+  const [isSavingCloud, setIsSavingCloud] = useState<boolean>(false);
+
   // --- Initial Loading per User ---
   useEffect(() => {
     if (!currentUser) {
@@ -141,60 +150,84 @@ export default function App() {
       return;
     }
 
+    // 1. Load locally first for instant display
+    let localData: any = null;
     try {
       const userStorageKey = `studentManagerData_${currentUser}`;
       const raw = localStorage.getItem(userStorageKey);
       if (raw) {
-        const parsed = JSON.parse(raw);
-        const loadedStudents = parsed.students || [];
-        const loadedClasses = parsed.classes || DEFAULT_CLASSES;
-        const loadedMainSelections = parsed.mainSelections || {};
-
-        setStudents(loadedStudents);
-        setClasses(loadedClasses);
-        setMainSelections(loadedMainSelections);
-
+        localData = JSON.parse(raw);
+        setStudents(localData.students || []);
+        setClasses(localData.classes || DEFAULT_CLASSES);
+        setMainSelections(localData.mainSelections || {});
         setLastSavedState(JSON.stringify({
-          students: loadedStudents,
-          mainSelections: loadedMainSelections,
-          classes: loadedClasses
+          students: localData.students || [],
+          mainSelections: localData.mainSelections || {},
+          classes: localData.classes || DEFAULT_CLASSES
         }));
       } else {
-        // Migration from legacy single storage if available
+        // Try migrating legacy data
         const legacyRaw = localStorage.getItem(STORAGE_KEY);
         if (legacyRaw) {
-          const parsed = JSON.parse(legacyRaw);
-          const loadedStudents = parsed.students || [];
-          const loadedClasses = parsed.classes || DEFAULT_CLASSES;
-          const loadedMainSelections = parsed.mainSelections || {};
-
-          setStudents(loadedStudents);
-          setClasses(loadedClasses);
-          setMainSelections(loadedMainSelections);
-
+          localData = JSON.parse(legacyRaw);
+          setStudents(localData.students || []);
+          setClasses(localData.classes || DEFAULT_CLASSES);
+          setMainSelections(localData.mainSelections || {});
           setLastSavedState(JSON.stringify({
-            students: loadedStudents,
-            mainSelections: loadedMainSelections,
-            classes: loadedClasses
+            students: localData.students || [],
+            mainSelections: localData.mainSelections || {},
+            classes: localData.classes || DEFAULT_CLASSES
           }));
         } else {
-          setStudents([]);
           setClasses(DEFAULT_CLASSES);
-          setMainSelections({});
-          setLastSavedState(JSON.stringify({
-            students: [],
-            mainSelections: {},
-            classes: DEFAULT_CLASSES
-          }));
         }
       }
     } catch (e) {
-      console.error("데이터 불러오기 실패", e);
+      console.error("로컬 데이터 불러오기 실패", e);
     }
+
+    // 2. Fetch from Cloud Firestore
+    const fetchCloudData = async () => {
+      setIsLoadingCloud(true);
+      try {
+        const cloudData = await loadCloudData(currentUser);
+        if (cloudData) {
+          setStudents(cloudData.students || []);
+          setClasses(cloudData.classes || DEFAULT_CLASSES);
+          setMainSelections(cloudData.mainSelections || {});
+          
+          const fullData = {
+            students: cloudData.students || [],
+            mainSelections: cloudData.mainSelections || {},
+            classes: cloudData.classes || DEFAULT_CLASSES
+          };
+          setLastSavedState(JSON.stringify(fullData));
+          
+          // Sync back to local storage for offline use
+          const userStorageKey = `studentManagerData_${currentUser}`;
+          localStorage.setItem(userStorageKey, JSON.stringify(fullData));
+        } else {
+          // If no cloud data exists yet but we have local data, automatically upload it
+          if (localData) {
+            await saveCloudData(currentUser, {
+              students: localData.students || [],
+              classes: localData.classes || DEFAULT_CLASSES,
+              mainSelections: localData.mainSelections || {}
+            });
+          }
+        }
+      } catch (err) {
+        console.error("클라우드 데이터 동기화 실패", err);
+      } finally {
+        setIsLoadingCloud(false);
+      }
+    };
+
+    fetchCloudData();
   }, [currentUser]);
 
   // --- Login & Register Handlers ---
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
     const username = loginId.trim();
@@ -209,29 +242,52 @@ export default function App() {
       return;
     }
 
+    setLoginError("로그인 중...");
+
     try {
+      // 1. Try Cloud Firestore login first
+      const loggedInUsername = await loginCloudUser(username, password);
+      
+      // Save credentials locally as backup
       const usersRaw = localStorage.getItem("studentManager_users") || "[]";
       const users = JSON.parse(usersRaw);
-      
-      const user = users.find((u: any) => u.username.toLowerCase() === username.toLowerCase());
-      if (!user || user.password !== password) {
-        setLoginError("아이디 또는 비밀번호가 올바르지 않습니다.");
-        return;
+      if (!users.some((u: any) => u.username.toLowerCase() === loggedInUsername.toLowerCase())) {
+        users.push({ username: loggedInUsername, password });
+        localStorage.setItem("studentManager_users", JSON.stringify(users));
       }
 
-      localStorage.setItem("studentManager_currentUser", user.username);
-      setCurrentUser(user.username);
+      localStorage.setItem("studentManager_currentUser", loggedInUsername);
+      setCurrentUser(loggedInUsername);
       
       // Clear inputs
       setLoginId("");
       setLoginPw("");
-    } catch (e) {
-      setLoginError("로그인 중 오류가 발생했습니다.");
+      setLoginError("");
+    } catch (e: any) {
+      // 2. Check local backup for offline access
+      try {
+        const usersRaw = localStorage.getItem("studentManager_users") || "[]";
+        const users = JSON.parse(usersRaw);
+        const user = users.find((u: any) => u.username.toLowerCase() === username.toLowerCase());
+        if (user && user.password === password) {
+          localStorage.setItem("studentManager_currentUser", user.username);
+          setCurrentUser(user.username);
+          setLoginId("");
+          setLoginPw("");
+          setLoginError("");
+          alert("네트워크 오프라인 상태입니다. 기기에 저장된 이전 로그인 정보를 기반으로 접속했습니다.");
+          return;
+        }
+      } catch (localErr) {
+        console.error("로컬 백업 확인 실패", localErr);
+      }
+
+      setLoginError(e.message || "로그인 중 오류가 발생했습니다.");
       console.error(e);
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegisterError("");
     const username = registerId.trim();
@@ -259,19 +315,18 @@ export default function App() {
       return;
     }
 
+    setRegisterError("가입 처리 중...");
+
     try {
+      // 1. Try registering in Cloud Firestore
+      await registerCloudUser(username, password);
+
+      // Save credentials locally as backup
       const usersRaw = localStorage.getItem("studentManager_users") || "[]";
       const users = JSON.parse(usersRaw);
-      
-      const exists = users.some((u: any) => u.username.toLowerCase() === username.toLowerCase());
-      if (exists) {
-        setRegisterError("이미 존재하는 아이디입니다.");
-        return;
-      }
+      users.push({ username, password });
+      localStorage.setItem("studentManager_users", JSON.stringify(users));
 
-      const updatedUsers = [...users, { username, password }];
-      localStorage.setItem("studentManager_users", JSON.stringify(updatedUsers));
-      
       // Auto login!
       localStorage.setItem("studentManager_currentUser", username);
       setCurrentUser(username);
@@ -280,15 +335,16 @@ export default function App() {
       setRegisterId("");
       setRegisterPw("");
       setRegisterPwConfirm("");
-    } catch (e) {
-      setRegisterError("회원가입 중 오류가 발생했습니다.");
+      setRegisterError("");
+    } catch (e: any) {
+      setRegisterError(e.message || "회원가입 중 오류가 발생했습니다.");
       console.error(e);
     }
   };
 
   const handleLogout = () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm("저장하지 않은 변경사항이 있습니다. 저장하지 않고 로그아웃 하시겠습니까?\n저장되지 않은 정보는 지워집니다.")) {
+      if (!window.confirm("저장하지 않은 변경사항이 있습니다. 정말 로그아웃 하시겠습니까?\n저장되지 않은 정보는 유실됩니다.")) {
         return;
       }
     }
@@ -297,25 +353,46 @@ export default function App() {
   };
 
   // --- Save Handler ---
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!currentUser) return;
+    
+    setSaveStatus("saving");
+    setIsSavingCloud(true);
+
+    const dataToSave = {
+      students,
+      mainSelections,
+      classes
+    };
+
+    // 1. Save locally first
     try {
-      const dataToSave = {
-        students,
-        mainSelections,
-        classes
-      };
       const userStorageKey = `studentManagerData_${currentUser}`;
       localStorage.setItem(userStorageKey, JSON.stringify(dataToSave));
+    } catch (localErr) {
+      console.error("로컬 저장 실패", localErr);
+    }
+
+    // 2. Save to Cloud Firestore
+    try {
+      await saveCloudData(currentUser, dataToSave);
       setLastSavedState(JSON.stringify(dataToSave));
       setSaveStatus("saved");
       setLastSavedTime(new Date().toLocaleString("ko-KR"));
       setTimeout(() => {
         setSaveStatus("idle");
       }, 1200);
-    } catch (e) {
-      alert("저장에 실패했습니다. 저장 공간 확인이 필요합니다.");
-      console.error(e);
+    } catch (cloudErr) {
+      console.error("클라우드 저장 실패", cloudErr);
+      setLastSavedState(JSON.stringify(dataToSave));
+      setSaveStatus("local-only");
+      setLastSavedTime(new Date().toLocaleString("ko-KR") + " (로컬 전용)");
+      alert("클라우드 저장에 실패했습니다. 네트워크를 확인해 주세요. (로컬 기기에는 안전하게 임시 저장되었습니다.)");
+      setTimeout(() => {
+        setSaveStatus("idle");
+      }, 3000);
+    } finally {
+      setIsSavingCloud(false);
     }
   };
 
@@ -1185,7 +1262,7 @@ export default function App() {
           </div>
 
           <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 text-center">
-            <span className="text-[9px] font-bold text-slate-400 tracking-wider">SECURE LOCAL PERSISTENCE SYSTEM</span>
+            <span className="text-[9px] font-bold text-slate-400 tracking-wider">SECURE CLOUD SYNC SYSTEM (FIREBASE)</span>
           </div>
         </div>
       </div>
@@ -1202,10 +1279,23 @@ export default function App() {
               <GraduationCap className="w-5 h-5" />
             </div>
             <div>
-              <h1 id="app-title" className="text-sm xs:text-base font-extrabold tracking-tight text-slate-900 leading-tight">지금, 수학 교습소</h1>
-              <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md border border-indigo-100/50">
-                {currentUser} 선생님
-              </span>
+              <div className="flex items-center gap-1.5">
+                <h1 id="app-title" className="text-sm xs:text-base font-extrabold tracking-tight text-slate-900 leading-tight">지금, 수학 교습소</h1>
+                {isLoadingCloud && (
+                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-500 bg-indigo-50 border border-indigo-100 px-1 py-0.5 rounded animate-pulse">
+                    <span className="w-1 h-1 bg-indigo-500 rounded-full animate-ping" />
+                    동기화 중
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50/85 px-1.5 py-0.5 rounded-md border border-indigo-100/50">
+                  {currentUser} 선생님
+                </span>
+                <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50/50 px-1 py-0.5 rounded border border-emerald-100/30">
+                  클라우드 연동됨
+                </span>
+              </div>
             </div>
           </div>
           
@@ -1221,15 +1311,28 @@ export default function App() {
             <button
               id="saveBtn"
               type="button"
+              disabled={saveStatus === "saving"}
               onClick={handleSave}
               className={`font-semibold text-xs px-3.5 py-2 rounded-xl shadow-sm transition-all duration-200 cursor-pointer flex items-center gap-1.5 border ${
                 saveStatus === "saved"
                   ? "bg-emerald-500 hover:bg-emerald-600 border-emerald-600 text-white"
+                  : saveStatus === "saving"
+                  ? "bg-amber-500 border-amber-600 text-white cursor-wait"
+                  : saveStatus === "local-only"
+                  ? "bg-rose-500 border-rose-600 text-white"
                   : "bg-indigo-600 hover:bg-indigo-700 border-indigo-700 text-white hover:shadow"
               }`}
             >
-              <span>{saveStatus === "saved" ? "저장됨" : "저장"}</span>
-              {hasUnsavedChanges && saveStatus !== "saved" && (
+              <span>
+                {saveStatus === "saved" 
+                  ? "저장됨 ✓" 
+                  : saveStatus === "saving" 
+                  ? "저장 중..." 
+                  : saveStatus === "local-only"
+                  ? "로컬 저장됨"
+                  : "저장"}
+              </span>
+              {hasUnsavedChanges && saveStatus !== "saved" && saveStatus !== "saving" && (
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
               )}
             </button>
