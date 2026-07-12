@@ -16,7 +16,8 @@ import {
   X,
   FileCheck,
   AlertCircle,
-  Download
+  Download,
+  Minus
 } from "lucide-react";
 import { ClassGroup, Student, MainSelections } from "./types";
 import { StudentCard } from "./components/StudentCard";
@@ -1130,15 +1131,27 @@ export default function App() {
           {selectedStudentIds.size > 0 && (
             <div
               id="bulk-action-bar"
-              className="fixed bottom-5 left-1/2 -translate-x-1/2 w-[92%] max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:px-4 sm:py-3.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-xl z-30 animate-in fade-in slide-in-from-bottom-5 duration-200"
+              className="fixed bottom-5 left-1/2 -translate-x-1/2 w-[92%] max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex flex-col gap-3 shadow-xl z-30 animate-in fade-in slide-in-from-bottom-5 duration-200"
             >
-              <div className="flex items-center justify-between sm:justify-start gap-2 text-white border-b border-slate-800 pb-2 sm:pb-0 sm:border-0">
+              <div className="flex items-center justify-between gap-2 text-white border-b border-slate-800 pb-2.5">
                 <div className="flex items-center gap-2">
                   <div className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-ping" />
-                  <span className="text-sm font-semibold">{selectedStudentIds.size}명 선택됨</span>
+                  <span className="text-sm font-semibold">
+                    {selectedStudentIds.size}명 선택됨
+                    {mainSelectionsCount > 0 && (
+                      <span className="text-indigo-300 font-bold ml-1.5 bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-800 text-[11px]">
+                        {mainSelectionsCount}개 날짜 선택됨
+                      </span>
+                    )}
+                  </span>
                 </div>
+                {mainSelectionsCount > 0 && (
+                  <span className="text-[10px] text-indigo-300 font-bold hidden xs:inline animate-pulse">
+                    수업 추가/제거 버튼을 눌러 배정하세요
+                  </span>
+                )}
               </div>
-              <div className="grid grid-cols-2 xs:flex xs:flex-wrap xs:items-center gap-1.5 w-full sm:w-auto">
+              <div className="grid grid-cols-2 xs:flex xs:flex-wrap xs:items-center gap-1.5 w-full">
                 <button
                   id="bulk-action-download"
                   type="button"
@@ -1147,34 +1160,61 @@ export default function App() {
                     setBulkDownloadMonth(mainMonth);
                     setIsBulkDownloadModalOpen(true);
                   }}
-                  className="text-xs font-bold px-2.5 py-2.5 sm:px-3.5 sm:py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1 shrink-0 col-span-2 xs:col-span-1"
+                  className="text-xs font-bold px-2.5 py-2.5 sm:px-3.5 sm:py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1 shrink-0"
                 >
                   <Download className="w-3.5 h-3.5 text-emerald-100" />
                   달력 다운로드
                 </button>
-                <button
-                  id="bulk-action-scroll-calendar"
-                  type="button"
-                  onClick={handleScrollToMainCalendar}
-                  className="text-xs font-bold px-2.5 py-2.5 sm:px-3.5 sm:py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-colors cursor-pointer flex items-center justify-center text-center"
-                >
-                  수업 배정 (달력)
-                </button>
+
+                {mainSelectionsCount > 0 ? (
+                  <>
+                    <button
+                      id="bulk-action-add-lessons"
+                      type="button"
+                      onClick={handleAddLessonsMain}
+                      className="text-xs font-bold px-2.5 py-2.5 sm:px-3.5 sm:py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-colors cursor-pointer flex items-center justify-center text-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      수업 추가
+                    </button>
+                    <button
+                      id="bulk-action-remove-lessons"
+                      type="button"
+                      onClick={handleRemoveLessonsMain}
+                      className="text-xs font-bold px-2.5 py-2.5 sm:px-3.5 sm:py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-colors cursor-pointer flex items-center justify-center text-center gap-1"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                      수업 제거
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    id="bulk-action-scroll-calendar"
+                    type="button"
+                    onClick={handleScrollToMainCalendar}
+                    className="text-xs font-bold px-2.5 py-2.5 sm:px-3.5 sm:py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-colors cursor-pointer flex items-center justify-center text-center gap-1"
+                  >
+                    <CalendarDays className="w-3.5 h-3.5" />
+                    수업 배정 (달력)
+                  </button>
+                )}
+
                 <button
                   id="bulk-action-delete"
                   type="button"
                   onClick={handleBulkDelete}
-                  className="text-xs font-bold px-2.5 py-2.5 sm:px-3.5 sm:py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-colors cursor-pointer flex items-center justify-center text-center"
+                  className="text-xs font-bold px-2.5 py-2.5 sm:px-3.5 sm:py-2 bg-rose-700 hover:bg-rose-600 text-white rounded-xl transition-colors cursor-pointer flex items-center justify-center text-center gap-1"
                 >
+                  <Trash2 className="w-3.5 h-3.5" />
                   삭제
                 </button>
                 <button
                   id="bulk-action-clear"
                   type="button"
                   onClick={handleBulkClearAll}
-                  className="text-xs font-bold px-2 py-2.5 sm:px-3 sm:py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors cursor-pointer flex items-center justify-center text-center col-span-2 xs:col-span-1"
+                  className="text-xs font-bold px-2 py-2.5 sm:px-3 sm:py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors cursor-pointer flex items-center justify-center text-center"
                 >
-                  취소
+                  선택 취소
                 </button>
               </div>
             </div>
@@ -1250,7 +1290,7 @@ export default function App() {
           </div>
 
           {/* Main Selection Bar Actions */}
-          {mainSelectionsCount > 0 && (
+          {mainSelectionsCount > 0 && selectedStudentIds.size === 0 && (
             <div
               id="main-selection-bar"
               className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-wrap items-center justify-between gap-3 animate-in fade-in zoom-in-95 duration-150"
