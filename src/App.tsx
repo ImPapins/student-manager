@@ -17,7 +17,13 @@ import {
   FileCheck,
   AlertCircle,
   Download,
-  Minus
+  Minus,
+  LogOut,
+  Lock,
+  User,
+  Eye,
+  EyeOff,
+  GraduationCap
 } from "lucide-react";
 import { ClassGroup, Student, MainSelections } from "./types";
 import { StudentCard } from "./components/StudentCard";
@@ -78,32 +84,230 @@ export default function App() {
   const [bulkDownloadMonth, setBulkDownloadMonth] = useState<number>(new Date().getMonth());
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
 
-  // --- Initial Loading ---
+  // --- Login System States ---
+  const [currentUser, setCurrentUser] = useState<string | null>(() => {
+    return localStorage.getItem("studentManager_currentUser");
+  });
+  const [loginId, setLoginId] = useState<string>("");
+  const [loginPw, setLoginPw] = useState<string>("");
+  const [registerId, setRegisterId] = useState<string>("");
+  const [registerPw, setRegisterPw] = useState<string>("");
+  const [registerPwConfirm, setRegisterPwConfirm] = useState<string>("");
+  const [isRegisterMode, setIsRegisterMode] = useState<boolean>(false);
+  const [loginError, setLoginError] = useState<string>("");
+  const [registerError, setRegisterError] = useState<string>("");
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+
+  // Unsaved changes tracking
+  const [lastSavedState, setLastSavedState] = useState<string>("");
+
+  const currentDynamicStateStr = useMemo(() => {
+    return JSON.stringify({
+      students,
+      mainSelections,
+      classes
+    });
+  }, [students, mainSelections, classes]);
+
+  const hasUnsavedChanges = useMemo(() => {
+    if (!currentUser) return false;
+    if (!lastSavedState) return false;
+    return currentDynamicStateStr !== lastSavedState;
+  }, [currentUser, lastSavedState, currentDynamicStateStr]);
+
+  // Alert on closing without saving
   useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        const msg = "변경사항이 저장되지 않았습니다. 정말 종료하시겠습니까?";
+        e.preventDefault();
+        e.returnValue = msg;
+        return msg;
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [hasUnsavedChanges]);
+
+  // --- Initial Loading per User ---
+  useEffect(() => {
+    if (!currentUser) {
+      setStudents([]);
+      setClasses(DEFAULT_CLASSES);
+      setMainSelections({});
+      setLastSavedState("");
+      return;
+    }
+
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const userStorageKey = `studentManagerData_${currentUser}`;
+      const raw = localStorage.getItem(userStorageKey);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed.students) setStudents(parsed.students);
-        if (parsed.classes) setClasses(parsed.classes);
-        if (parsed.mainSelections) setMainSelections(parsed.mainSelections);
+        const loadedStudents = parsed.students || [];
+        const loadedClasses = parsed.classes || DEFAULT_CLASSES;
+        const loadedMainSelections = parsed.mainSelections || {};
+
+        setStudents(loadedStudents);
+        setClasses(loadedClasses);
+        setMainSelections(loadedMainSelections);
+
+        setLastSavedState(JSON.stringify({
+          students: loadedStudents,
+          mainSelections: loadedMainSelections,
+          classes: loadedClasses
+        }));
       } else {
-        setClasses(DEFAULT_CLASSES);
+        // Migration from legacy single storage if available
+        const legacyRaw = localStorage.getItem(STORAGE_KEY);
+        if (legacyRaw) {
+          const parsed = JSON.parse(legacyRaw);
+          const loadedStudents = parsed.students || [];
+          const loadedClasses = parsed.classes || DEFAULT_CLASSES;
+          const loadedMainSelections = parsed.mainSelections || {};
+
+          setStudents(loadedStudents);
+          setClasses(loadedClasses);
+          setMainSelections(loadedMainSelections);
+
+          setLastSavedState(JSON.stringify({
+            students: loadedStudents,
+            mainSelections: loadedMainSelections,
+            classes: loadedClasses
+          }));
+        } else {
+          setStudents([]);
+          setClasses(DEFAULT_CLASSES);
+          setMainSelections({});
+          setLastSavedState(JSON.stringify({
+            students: [],
+            mainSelections: {},
+            classes: DEFAULT_CLASSES
+          }));
+        }
       }
     } catch (e) {
       console.error("데이터 불러오기 실패", e);
     }
-  }, []);
+  }, [currentUser]);
+
+  // --- Login & Register Handlers ---
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
+    const username = loginId.trim();
+    const password = loginPw.trim();
+
+    if (!username) {
+      setLoginError("아이디를 입력해 주세요.");
+      return;
+    }
+    if (!password) {
+      setLoginError("비밀번호를 입력해 주세요.");
+      return;
+    }
+
+    try {
+      const usersRaw = localStorage.getItem("studentManager_users") || "[]";
+      const users = JSON.parse(usersRaw);
+      
+      const user = users.find((u: any) => u.username.toLowerCase() === username.toLowerCase());
+      if (!user || user.password !== password) {
+        setLoginError("아이디 또는 비밀번호가 올바르지 않습니다.");
+        return;
+      }
+
+      localStorage.setItem("studentManager_currentUser", user.username);
+      setCurrentUser(user.username);
+      
+      // Clear inputs
+      setLoginId("");
+      setLoginPw("");
+    } catch (e) {
+      setLoginError("로그인 중 오류가 발생했습니다.");
+      console.error(e);
+    }
+  };
+
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegisterError("");
+    const username = registerId.trim();
+    const password = registerPw.trim();
+    const confirm = registerPwConfirm.trim();
+
+    if (!username) {
+      setRegisterError("아이디를 입력해 주세요.");
+      return;
+    }
+    if (username.length < 3) {
+      setRegisterError("아이디는 최소 3글자 이상이어야 합니다.");
+      return;
+    }
+    if (!password) {
+      setRegisterError("비밀번호를 입력해 주세요.");
+      return;
+    }
+    if (password.length < 4) {
+      setRegisterError("비밀번호는 최소 4글자 이상이어야 합니다.");
+      return;
+    }
+    if (password !== confirm) {
+      setRegisterError("비밀번호 확인이 일치하지 않습니다.");
+      return;
+    }
+
+    try {
+      const usersRaw = localStorage.getItem("studentManager_users") || "[]";
+      const users = JSON.parse(usersRaw);
+      
+      const exists = users.some((u: any) => u.username.toLowerCase() === username.toLowerCase());
+      if (exists) {
+        setRegisterError("이미 존재하는 아이디입니다.");
+        return;
+      }
+
+      const updatedUsers = [...users, { username, password }];
+      localStorage.setItem("studentManager_users", JSON.stringify(updatedUsers));
+      
+      // Auto login!
+      localStorage.setItem("studentManager_currentUser", username);
+      setCurrentUser(username);
+      
+      // Clear inputs
+      setRegisterId("");
+      setRegisterPw("");
+      setRegisterPwConfirm("");
+    } catch (e) {
+      setRegisterError("회원가입 중 오류가 발생했습니다.");
+      console.error(e);
+    }
+  };
+
+  const handleLogout = () => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm("저장하지 않은 변경사항이 있습니다. 저장하지 않고 로그아웃 하시겠습니까?\n저장되지 않은 정보는 지워집니다.")) {
+        return;
+      }
+    }
+    localStorage.removeItem("studentManager_currentUser");
+    setCurrentUser(null);
+  };
 
   // --- Save Handler ---
   const handleSave = () => {
+    if (!currentUser) return;
     try {
       const dataToSave = {
         students,
         mainSelections,
         classes
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+      const userStorageKey = `studentManagerData_${currentUser}`;
+      localStorage.setItem(userStorageKey, JSON.stringify(dataToSave));
+      setLastSavedState(JSON.stringify(dataToSave));
       setSaveStatus("saved");
       setLastSavedTime(new Date().toLocaleString("ko-KR"));
       setTimeout(() => {
@@ -805,36 +1009,241 @@ export default function App() {
     }
   };
 
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 sm:p-6 md:p-8 antialiased">
+        <div className="w-full max-w-sm bg-white border border-slate-200/80 rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          
+          {/* Header Banner */}
+          <div className="bg-indigo-600 px-6 py-8 text-center text-white relative">
+            <div className="absolute top-3 right-3 opacity-15">
+              <GraduationCap className="w-24 h-24 animate-pulse" />
+            </div>
+            <div className="mx-auto w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center shadow-inner mb-4">
+              <GraduationCap className="w-6 h-6 text-white" />
+            </div>
+            <h1 className="text-xl font-extrabold tracking-tight mb-1">지금, 수학 교습소</h1>
+            <p className="text-[11px] text-indigo-100 font-medium">학생 일정 배정 및 수업 관리 시스템</p>
+          </div>
+
+          {/* Form Area */}
+          <div className="p-6">
+            {!isRegisterMode ? (
+              // LOGIN FORM
+              <form onSubmit={handleLogin} className="space-y-4">
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">로그인</h2>
+                
+                {loginError && (
+                  <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-100 rounded-xl text-rose-600 text-xs font-semibold animate-in fade-in duration-150">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">아이디</label>
+                  <div className="relative">
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      value={loginId}
+                      onChange={(e) => setLoginId(e.target.value)}
+                      placeholder="아이디를 입력해 주세요"
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl text-sm outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">비밀번호</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={loginPw}
+                      onChange={(e) => setLoginPw(e.target.value)}
+                      placeholder="비밀번호를 입력해 주세요"
+                      className="w-full pl-10 pr-10 py-2.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl text-sm outline-none transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl shadow-sm hover:shadow transition-all cursor-pointer flex items-center justify-center"
+                >
+                  로그인하기
+                </button>
+
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRegisterMode(true);
+                      setLoginError("");
+                      setLoginId("");
+                      setLoginPw("");
+                    }}
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-500 hover:underline"
+                  >
+                    처음이신가요? 회원가입하기
+                  </button>
+                </div>
+              </form>
+            ) : (
+              // REGISTER FORM
+              <form onSubmit={handleRegister} className="space-y-4">
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">회원가입</h2>
+                
+                {registerError && (
+                  <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-100 rounded-xl text-rose-600 text-xs font-semibold animate-in fade-in duration-150">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{registerError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">아이디</label>
+                  <div className="relative">
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      value={registerId}
+                      onChange={(e) => setRegisterId(e.target.value)}
+                      placeholder="생성할 아이디 (최소 3자)"
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl text-sm outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">비밀번호</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={registerPw}
+                      onChange={(e) => setRegisterPw(e.target.value)}
+                      placeholder="비밀번호 (최소 4자)"
+                      className="w-full pl-10 pr-10 py-2.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl text-sm outline-none transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">비밀번호 확인</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={registerPwConfirm}
+                      onChange={(e) => setRegisterPwConfirm(e.target.value)}
+                      placeholder="비밀번호 재입력"
+                      className="w-full pl-10 pr-10 py-2.5 bg-slate-50/50 hover:bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl text-sm outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl shadow-sm hover:shadow transition-all cursor-pointer flex items-center justify-center"
+                >
+                  회원가입 완료 및 로그인
+                </button>
+
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRegisterMode(false);
+                      setRegisterError("");
+                      setRegisterId("");
+                      setRegisterPw("");
+                      setRegisterPwConfirm("");
+                    }}
+                    className="text-xs font-bold text-slate-500 hover:text-slate-700 hover:underline"
+                  >
+                    이미 계정이 있으신가요? 로그인하기
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+
+          <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 text-center">
+            <span className="text-[9px] font-bold text-slate-400 tracking-wider">SECURE LOCAL PERSISTENCE SYSTEM</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans antialiased">
       {/* Sticky Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-slate-200/80 shadow-xs backdrop-blur-md">
-        <div className="max-w-4xl mx-auto px-4 py-3.5 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-indigo-600 text-white rounded-lg">
-              <Users className="w-5 h-5" />
+            <div className="p-2 bg-indigo-600 text-white rounded-lg shadow-inner shrink-0">
+              <GraduationCap className="w-5 h-5" />
             </div>
             <div>
-              <h1 id="app-title" className="text-lg font-bold tracking-tight text-slate-900">학생 관리</h1>
+              <h1 id="app-title" className="text-sm xs:text-base font-extrabold tracking-tight text-slate-900 leading-tight">지금, 수학 교습소</h1>
+              <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md border border-indigo-100/50">
+                {currentUser} 선생님
+              </span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end text-right hidden md:flex mr-1">
               {lastSavedTime && (
-                <p className="text-[10px] text-gray-500 font-medium">
-                  마지막 저장: {lastSavedTime}
+                <p className="text-[9px] text-gray-400 font-semibold">
+                  최근 저장: {lastSavedTime}
                 </p>
               )}
             </div>
+            
+            <button
+              id="saveBtn"
+              type="button"
+              onClick={handleSave}
+              className={`font-semibold text-xs px-3.5 py-2 rounded-xl shadow-sm transition-all duration-200 cursor-pointer flex items-center gap-1.5 border ${
+                saveStatus === "saved"
+                  ? "bg-emerald-500 hover:bg-emerald-600 border-emerald-600 text-white"
+                  : "bg-indigo-600 hover:bg-indigo-700 border-indigo-700 text-white hover:shadow"
+              }`}
+            >
+              <span>{saveStatus === "saved" ? "저장됨" : "저장"}</span>
+              {hasUnsavedChanges && saveStatus !== "saved" && (
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+              )}
+            </button>
+            
+            <button
+              id="logoutBtn"
+              type="button"
+              onClick={handleLogout}
+              className="p-2 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-500 hover:text-rose-500 rounded-xl transition-colors cursor-pointer shrink-0"
+              title="로그아웃"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
-          <button
-            id="saveBtn"
-            type="button"
-            onClick={handleSave}
-            className={`font-semibold text-sm px-5 py-2 rounded-lg shadow-sm transition-all duration-200 cursor-pointer ${
-              saveStatus === "saved"
-                ? "bg-emerald-500 hover:bg-emerald-600 text-white"
-                : "bg-indigo-600 hover:bg-indigo-700 text-white hover:shadow"
-            }`}
-          >
-            {saveStatus === "saved" ? "저장됨 ✓" : "저장"}
-          </button>
         </div>
       </header>
 
