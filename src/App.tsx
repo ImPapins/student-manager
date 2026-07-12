@@ -83,6 +83,7 @@ export default function App() {
   const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
   const [modalYear, setModalYear] = useState<number>(new Date().getFullYear());
   const [modalMonth, setModalMonth] = useState<number>(new Date().getMonth());
+  const [modalLessonClassId, setModalLessonClassId] = useState<string | null>(null);
 
   // Bulk PNG Download state
   const [isBulkDownloadModalOpen, setIsBulkDownloadModalOpen] = useState<boolean>(false);
@@ -136,6 +137,18 @@ export default function App() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [hasUnsavedChanges]);
+
+  // Set default class ID for adding lesson when opening a student's calendar modal
+  useEffect(() => {
+    if (activeStudentId) {
+      const activeStudent = students.find((s) => s.id === activeStudentId);
+      if (activeStudent) {
+        setModalLessonClassId(activeStudent.classId);
+      }
+    } else {
+      setModalLessonClassId(null);
+    }
+  }, [activeStudentId]);
 
   const [isLoadingCloud, setIsLoadingCloud] = useState<boolean>(false);
   const [isSavingCloud, setIsSavingCloud] = useState<boolean>(false);
@@ -951,13 +964,15 @@ export default function App() {
     setMainSelections(updatedSelections);
   };
 
-  const handleAddLessonsStudent = () => {
+  const handleAddLessonsStudent = (classIdOverride?: string | null) => {
     if (!activeStudentId) return;
     const s = students.find((student) => student.id === activeStudentId);
     if (!s) return;
 
-    if (!s.classId) {
-      alert("이 학생은 반이 지정되지 않았습니다.");
+    const targetClassId = classIdOverride !== undefined ? classIdOverride : s.classId;
+
+    if (!targetClassId) {
+      alert("배정할 반이 지정되지 않았습니다.");
       return;
     }
 
@@ -976,7 +991,7 @@ export default function App() {
         const nextLessons = { ...student.lessons };
         const nextDayMap = { ...(nextLessons[key] || {}) };
         days.forEach((day) => {
-          if (student.classId) nextDayMap[String(day)] = student.classId;
+          nextDayMap[String(day)] = targetClassId;
         });
 
         nextLessons[key] = nextDayMap;
@@ -1849,11 +1864,11 @@ export default function App() {
           onClick={() => setActiveStudentId(null)}
         >
           <div
-            className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-5 border border-slate-100 relative space-y-4 animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md max-h-[90vh] flex flex-col bg-white rounded-2xl shadow-2xl p-5 border border-slate-100 relative animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center font-bold text-indigo-600">
                   {activeStudent.name.charAt(0)}
@@ -1879,125 +1894,152 @@ export default function App() {
               </button>
             </div>
 
-            {/* Modal Calendar */}
-            {activeStudent.classId && (
-              <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-3 flex flex-col gap-1.5">
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <CalendarDays className="w-3.5 h-3.5 text-indigo-500" />
-                  수업 회차 세기 기준일 (선택)
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    id="student-base-date-input"
-                    type="date"
-                    value={activeStudent.baseDate || ""}
-                    onChange={(e) => handleUpdateStudentBaseDate(activeStudent.id, e.target.value)}
-                    className="flex-1 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg py-1.5 px-3 text-xs bg-white outline-none transition-colors"
-                  />
-                  {activeStudent.baseDate && (
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateStudentBaseDate(activeStudent.id, "")}
-                      className="px-2.5 py-1.5 border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-500 transition-colors cursor-pointer bg-white"
-                    >
-                      초기화
-                    </button>
-                  )}
+            {/* Scrollable Content Container */}
+            <div className="flex-1 overflow-y-auto py-3 pr-1.5 space-y-4 min-h-0">
+              {/* Modal Calendar */}
+              {activeStudent.classId && (
+                <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-3 flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <CalendarDays className="w-3.5 h-3.5 text-indigo-500" />
+                    수업 회차 세기 기준일 (선택)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="student-base-date-input"
+                      type="date"
+                      value={activeStudent.baseDate || ""}
+                      onChange={(e) => handleUpdateStudentBaseDate(activeStudent.id, e.target.value)}
+                      className="flex-1 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg py-1.5 px-3 text-xs bg-white outline-none transition-colors"
+                    />
+                    {activeStudent.baseDate && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStudentBaseDate(activeStudent.id, "")}
+                        className="px-2.5 py-1.5 border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-500 transition-colors cursor-pointer bg-white"
+                      >
+                        초기화
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-medium leading-normal">
+                    지정된 기준일 이후의 수업들에 대해서만 몇 번째 수업인지 회차 번호를 세어 표시합니다. (이전 날짜는 빈 칸으로 표시)
+                  </p>
                 </div>
-                <p className="text-[10px] text-slate-400 font-medium leading-normal">
-                  지정된 기준일 이후의 수업들에 대해서만 몇 번째 수업인지 회차 번호를 세어 표시합니다. (이전 날짜는 빈 칸으로 표시)
+              )}
+
+              <Calendar
+                mode="student"
+                student={activeStudent}
+                students={students}
+                classes={classes}
+                selectedDays={
+                  (activeStudent.selections &&
+                    activeStudent.selections[`${modalYear}-${modalMonth}`]) ||
+                  []
+                }
+                onToggleDay={handleToggleStudentDay}
+                onToggleWeekday={handleToggleStudentWeekday}
+                onToggleDays={handleToggleStudentDays}
+                onClearSelection={handleClearStudentSelection}
+                year={modalYear}
+                month={modalMonth}
+                onDateChange={handleModalDateChange}
+              />
+
+              {/* Helper Hint */}
+              {!activeStudent.classId && (
+                <div className="flex items-start gap-1.5 bg-amber-50 text-amber-800 p-2.5 rounded-xl border border-amber-100 text-[11px] leading-relaxed font-semibold">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-500 mt-0.5" />
+                  <span>
+                    이 학생은 현재 소속 반이 없어 수업 배정이 불가능합니다.
+                    배정 전에 소속 반을 선택해 주세요.
+                  </span>
+                </div>
+              )}
+
+              {/* Download Calendar as PNG */}
+              <div className="pt-3 border-t border-slate-100 flex flex-col gap-1.5">
+                <button
+                  id="modal-download-png-btn"
+                  type="button"
+                  onClick={() => downloadStudentCalendarPNG(activeStudent, modalYear, modalMonth, classes)}
+                  className="w-full flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl transition-colors cursor-pointer shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
+                  수업 달력 이미지 다운로드 (.png)
+                </button>
+                <p className="text-[10px] text-slate-400 text-center font-medium">
+                  현재 화면에 표시된 {modalYear}년 {modalMonth + 1}월 달력 이미지(PNG)가 기기에 다운로드됩니다.
                 </p>
               </div>
-            )}
 
-            <Calendar
-              mode="student"
-              student={activeStudent}
-              students={students}
-              classes={classes}
-              selectedDays={
-                (activeStudent.selections &&
-                  activeStudent.selections[`${modalYear}-${modalMonth}`]) ||
-                []
-              }
-              onToggleDay={handleToggleStudentDay}
-              onToggleWeekday={handleToggleStudentWeekday}
-              onToggleDays={handleToggleStudentDays}
-              onClearSelection={handleClearStudentSelection}
-              year={modalYear}
-              month={modalMonth}
-              onDateChange={handleModalDateChange}
-            />
+              {/* Modal Selection Actions */}
+              {modalSelectionsCount > 0 && (
+                <div
+                  id="modal-selection-bar"
+                  className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-700">
+                      {modalSelectionsCount}개 날짜 선택됨
+                    </span>
+                    <button
+                      id="modal-clear-selection-btn"
+                      type="button"
+                      onClick={handleClearStudentSelection}
+                      className="text-[10px] font-bold text-slate-400 hover:text-slate-600 underline transition-colors cursor-pointer"
+                    >
+                      선택 취소
+                    </button>
+                  </div>
 
-            {/* Helper Hint */}
-            {!activeStudent.classId && (
-              <div className="flex items-start gap-1.5 bg-amber-50 text-amber-800 p-2.5 rounded-xl border border-amber-100 text-[11px] leading-relaxed font-semibold">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-500 mt-0.5" />
-                <span>
-                  이 학생은 현재 소속 반이 없어 수업 배정이 불가능합니다.
-                  배정 전에 소속 반을 선택해 주세요.
-                </span>
-              </div>
-            )}
+                  {/* Lesson Class Selector */}
+                  <div className="bg-white p-2.5 rounded-lg border border-indigo-100 flex flex-col gap-1 shadow-2xs">
+                    <label className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                      수업 추가 시 지정할 반 선택
+                    </label>
+                    <select
+                      id="modal-lesson-class-select"
+                      value={modalLessonClassId || ""}
+                      onChange={(e) => setModalLessonClassId(e.target.value || null)}
+                      className="w-full text-xs border border-slate-200 rounded-lg py-1.5 px-2 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold cursor-pointer focus:outline-none transition-colors"
+                    >
+                      <option value="">반 선택 (미지정)</option>
+                      {classes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-            {/* Download Calendar as PNG */}
-            <div className="pt-3 border-t border-slate-100 flex flex-col gap-1.5">
-              <button
-                id="modal-download-png-btn"
-                type="button"
-                onClick={() => downloadStudentCalendarPNG(activeStudent, modalYear, modalMonth, classes)}
-                className="w-full flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl transition-colors cursor-pointer shadow-sm"
-              >
-                <Download className="w-3.5 h-3.5 text-emerald-400" />
-                수업 달력 이미지 다운로드 (.png)
-              </button>
-              <p className="text-[10px] text-slate-400 text-center font-medium">
-                현재 화면에 표시된 {modalYear}년 {modalMonth + 1}월 달력 이미지(PNG)가 기기에 다운로드됩니다.
-              </p>
-            </div>
-
-            {/* Modal Selection Actions */}
-            {modalSelectionsCount > 0 && (
-              <div
-                id="modal-selection-bar"
-                className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-wrap items-center justify-between gap-3 animate-in fade-in zoom-in-95 duration-150"
-              >
-                <span className="text-xs font-bold text-indigo-700">
-                  {modalSelectionsCount}개 날짜 선택됨
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    id="modal-add-lesson-btn"
-                    type="button"
-                    onClick={handleAddLessonsStudent}
-                    disabled={!activeStudent.classId}
-                    className={`text-xs font-bold px-3.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                      activeStudent.classId
-                        ? "bg-indigo-600 hover:bg-indigo-500 text-white"
-                        : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                    }`}
-                  >
-                    수업 추가
-                  </button>
-                  <button
-                    id="modal-remove-lesson-btn"
-                    type="button"
-                    onClick={handleRemoveLessonsStudent}
-                    className="text-xs font-bold px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition-colors cursor-pointer"
-                  >
-                    수업 제거
-                  </button>
-                  <button
-                    id="modal-clear-selection-btn"
-                    type="button"
-                    onClick={handleClearStudentSelection}
-                    className="text-xs font-bold px-2.5 py-1.5 border border-slate-200 hover:bg-white text-slate-600 rounded-lg transition-colors cursor-pointer"
-                  >
-                    취소
-                  </button>
+                  <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-indigo-100/50">
+                    <button
+                      id="modal-add-lesson-btn"
+                      type="button"
+                      onClick={() => handleAddLessonsStudent(modalLessonClassId)}
+                      disabled={!modalLessonClassId}
+                      className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex-1 text-center justify-center ${
+                        modalLessonClassId
+                          ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+                          : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      }`}
+                    >
+                      수업 추가
+                    </button>
+                    <button
+                      id="modal-remove-lesson-btn"
+                      type="button"
+                      onClick={handleRemoveLessonsStudent}
+                      className="text-xs font-bold px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition-colors cursor-pointer flex-1 text-center justify-center"
+                    >
+                      수업 제거
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
