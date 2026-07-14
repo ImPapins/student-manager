@@ -11,6 +11,7 @@ export interface Student {
   selections?: { [monthKey: string]: number[] }; // Selected days in the calendar (for modal)
   lessons?: { [monthKey: string]: { [day: string]: string } }; // monthKey ("YYYY-M") -> day -> classId
   baseDate?: string; // Base date for lesson counting (e.g., "YYYY-MM-DD")
+  unavailables?: { [monthKey: string]: number[] }; // Days the student cannot attend
 }
 
 export interface MainSelections {

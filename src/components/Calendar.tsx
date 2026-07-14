@@ -385,6 +385,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
                 const formattedDateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                 const isStudentMode = mode === "student";
+                const isUnavailable = isStudentMode && !!student?.unavailables?.[monthKey]?.includes(day);
                 const hasLessonCount = isStudentMode && !!student?.baseDate;
                 const lessonCountText = hasLessonCount ? lessonCounts[formattedDateStr] : undefined;
                 const shouldShowLines = isStudentMode ? (hasLessonCount && !!lessonCountText) : displayLines.length > 0;
@@ -400,19 +401,22 @@ export const Calendar: React.FC<CalendarProps> = ({
                     className={`relative aspect-auto min-h-[52px] xs:min-h-[58px] sm:aspect-square w-full flex flex-col items-center justify-between rounded-lg p-1 select-none transition-all cursor-pointer ${
                       isSelected
                         ? "bg-indigo-600 text-white font-bold ring-2 ring-indigo-300 shadow-md"
+                        : isUnavailable
+                        ? "bg-rose-50/60 border-rose-200 text-rose-700 hover:bg-rose-100/60"
                         : "bg-white border border-gray-100 text-gray-800 hover:bg-gray-50"
                     } ${isTodayDate && !isSelected ? "font-extrabold text-red-600" : ""}`}
                   >
                     <span className="text-xs font-bold leading-none">{day}</span>
 
-                    {/* Lesson lines / Lesson count */}
-                    {!isSelected && shouldShowLines && (
+                    {/* Lesson lines / Lesson count / Unavailability */}
+                    {!isSelected && (shouldShowLines || isUnavailable) && (
                       <div className="w-full flex flex-col gap-0.5 mt-1 overflow-hidden">
-                        {hasLessonCount ? (
+                        {hasLessonCount && !!lessonCountText && (
                           <span className="text-[8px] xs:text-[9px] leading-none text-indigo-600 font-bold truncate w-full text-center py-0.5 px-0.5 block bg-indigo-50 rounded-sm border border-indigo-100 tracking-tighter xs:tracking-normal">
                             {lessonCountText}
                           </span>
-                        ) : (
+                        )}
+                        {!hasLessonCount && shouldShowLines && (
                           <>
                             {displayLines.slice(0, 2).map((line, idx) => (
                               <div key={idx} className="w-full">
@@ -436,6 +440,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                               </span>
                             )}
                           </>
+                        )}
+                        {isUnavailable && (
+                          <span className="text-[8px] xs:text-[9px] leading-none text-rose-600 font-bold truncate w-full text-center py-0.5 px-0.5 block bg-rose-100/70 border border-rose-200 rounded-sm tracking-tighter xs:tracking-normal">
+                            🚫 불가일
+                          </span>
                         )}
                       </div>
                     )}

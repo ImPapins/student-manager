@@ -37,19 +37,23 @@ import {
 } from "./firebase";
 
 const STORAGE_KEY = "studentManagerData";
-const CLASS_COLOR_PALETTE = [
-  "#4f6bff", // Indigo
-  "#10b981", // Emerald
-  "#f59e0b", // Amber
-  "#ec4899", // Pink
-  "#22c55e", // Green
-  "#8b5cf6", // Purple
-  "#f97316", // Orange
-  "#06b6d4"  // Cyan
+const SELECTABLE_COLORS = [
+  { name: "빨강", color: "#ef4444" },
+  { name: "주황", color: "#f97316" },
+  { name: "노랑", color: "#f59e0b" },
+  { name: "연두", color: "#84cc16" },
+  { name: "초록", color: "#10b981" },
+  { name: "하늘", color: "#06b6d4" },
+  { name: "파랑", color: "#3b82f6" },
+  { name: "보라", color: "#8b5cf6" },
+  { name: "분홍", color: "#ec4899" },
+  { name: "갈색", color: "#783c1d" }
 ];
 
+const CLASS_COLOR_PALETTE = SELECTABLE_COLORS.map(c => c.color);
+
 const DEFAULT_CLASSES: ClassGroup[] = [
-  { id: "class-morning", name: "오전반", color: "#4f6bff" },
+  { id: "class-morning", name: "오전반", color: "#3b82f6" },
   { id: "class-afternoon", name: "오후반", color: "#10b981" },
   { id: "class-elementary", name: "초등반", color: "#f59e0b" }
 ];
@@ -84,6 +88,11 @@ export default function App() {
   const [modalYear, setModalYear] = useState<number>(new Date().getFullYear());
   const [modalMonth, setModalMonth] = useState<number>(new Date().getMonth());
   const [modalLessonClassId, setModalLessonClassId] = useState<string | null>(null);
+
+  // Class Editing Modal state
+  const [editingClass, setEditingClass] = useState<ClassGroup | null>(null);
+  const [editingClassName, setEditingClassName] = useState<string>("");
+  const [editingClassColor, setEditingClassColor] = useState<string>("");
 
   // Bulk PNG Download state
   const [isBulkDownloadModalOpen, setIsBulkDownloadModalOpen] = useState<boolean>(false);
@@ -414,8 +423,8 @@ export default function App() {
     const name = newClassName.trim();
     if (!name) return;
 
-    // Pick next color from palette
-    const color = CLASS_COLOR_PALETTE[classes.length % CLASS_COLOR_PALETTE.length];
+    // Pick next color from SELECTABLE_COLORS
+    const color = SELECTABLE_COLORS[classes.length % SELECTABLE_COLORS.length].color;
     const newClass: ClassGroup = {
       id: `class-${Date.now()}`,
       name,
@@ -424,6 +433,35 @@ export default function App() {
 
     setClasses([...classes, newClass]);
     setNewClassName("");
+  };
+
+  const handleStartEditClass = (c: ClassGroup) => {
+    setEditingClass(c);
+    setEditingClassName(c.name);
+    setEditingClassColor(c.color);
+  };
+
+  const handleSaveEditClass = () => {
+    if (!editingClass) return;
+    const name = editingClassName.trim();
+    if (!name) {
+      alert("반 이름을 입력해 주세요.");
+      return;
+    }
+
+    const updatedClasses = classes.map((c) => {
+      if (c.id === editingClass.id) {
+        return {
+          ...c,
+          name,
+          color: editingClassColor
+        };
+      }
+      return c;
+    });
+
+    setClasses(updatedClasses);
+    setEditingClass(null);
   };
 
   const handleDeleteClass = (id: string) => {
@@ -1043,13 +1081,80 @@ export default function App() {
     );
   };
 
+  const handleAddUnavailablesStudent = () => {
+    if (!activeStudentId) return;
+    const s = students.find((student) => student.id === activeStudentId);
+    if (!s) return;
+
+    const key = `${modalYear}-${modalMonth}`;
+    const selections = s.selections || {};
+    const days = selections[key] || [];
+    if (days.length === 0) {
+      alert("먼저 달력에서 날짜를 선택해 주세요.");
+      return;
+    }
+
+    setStudents(
+      students.map((student) => {
+        if (student.id !== activeStudentId) return student;
+
+        const nextUnavailables = { ...student.unavailables };
+        const currentDays = nextUnavailables[key] || [];
+        const merged = Array.from(new Set([...currentDays, ...days])).sort((a, b) => a - b);
+        nextUnavailables[key] = merged;
+
+        // Clear selection for this month
+        const nextSelections = { ...student.selections };
+        delete nextSelections[key];
+
+        return { ...student, unavailables: nextUnavailables, selections: nextSelections };
+      })
+    );
+  };
+
+  const handleRemoveUnavailablesStudent = () => {
+    if (!activeStudentId) return;
+    const s = students.find((student) => student.id === activeStudentId);
+    if (!s) return;
+
+    const key = `${modalYear}-${modalMonth}`;
+    const selections = s.selections || {};
+    const days = selections[key] || [];
+    if (days.length === 0) {
+      alert("먼저 달력에서 날짜를 선택해 주세요.");
+      return;
+    }
+
+    setStudents(
+      students.map((student) => {
+        if (student.id !== activeStudentId) return student;
+
+        const nextUnavailables = { ...student.unavailables };
+        const currentDays = nextUnavailables[key] || [];
+        const filtered = currentDays.filter((d) => !days.includes(d));
+
+        if (filtered.length === 0) {
+          delete nextUnavailables[key];
+        } else {
+          nextUnavailables[key] = filtered;
+        }
+
+        // Clear selection for this month
+        const nextSelections = { ...student.selections };
+        delete nextSelections[key];
+
+        return { ...student, unavailables: nextUnavailables, selections: nextSelections };
+      })
+    );
+  };
+
   // --- Today's Lesson Summary aggregation ---
   const todayLessonSummary = useMemo(() => {
     const today = new Date();
     const key = `${today.getFullYear()}-${today.getMonth()}`;
     const todayDate = today.getDate();
 
-    const byClass: { [classId: string]: { name: string; color: string; students: string[] } } = {};
+    const byClass: { [classId: string]: { name: string; color: string; students: { id: string; name: string }[] } } = {};
 
     students.forEach((s) => {
       if (!s.lessons || !s.lessons[key]) return;
@@ -1062,7 +1167,7 @@ export default function App() {
       if (!byClass[cls.id]) {
         byClass[cls.id] = { name: cls.name, color: cls.color, students: [] };
       }
-      byClass[cls.id].students.push(s.name);
+      byClass[cls.id].students.push({ id: s.id, name: s.name });
     });
 
     return Object.values(byClass);
@@ -1402,17 +1507,25 @@ export default function App() {
                 <div
                   key={c.id}
                   id={`class-chip-${c.id}`}
-                  className="flex items-center gap-2 border border-slate-200 rounded-full py-1.5 pl-3.5 pr-2 bg-slate-50/50 hover:bg-slate-50 transition-colors"
+                  onClick={() => handleStartEditClass(c)}
+                  className="flex items-center gap-1.5 border border-slate-200 rounded-full py-1.5 pl-3.5 pr-1.5 bg-slate-50/50 hover:bg-indigo-50/20 hover:border-indigo-300 transition-all cursor-pointer group"
+                  title="클릭하여 반 이름 및 색상 수정"
                 >
                   <span
-                    className="w-2.5 h-2.5 rounded-full"
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: c.color }}
                   />
                   <span className="text-xs font-bold text-slate-700">{c.name}</span>
+                  <span className="text-[9px] text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity ml-1 bg-indigo-50 px-1.5 py-0.5 rounded-md">
+                    수정
+                  </span>
                   <button
                     id={`delete-class-btn-${c.id}`}
                     type="button"
-                    onClick={() => handleDeleteClass(c.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteClass(c.id);
+                    }}
                     className="p-1 hover:bg-slate-200 rounded-full text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
                     title="반 삭제"
                   >
@@ -1800,14 +1913,23 @@ export default function App() {
                         {clsInfo.name} ({clsInfo.students.length}명)
                       </span>
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {clsInfo.students.map((name, index) => (
-                        <span
-                          key={index}
-                          className="text-[10px] bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-md font-semibold text-slate-600"
+                    <div className="flex flex-wrap gap-1.5">
+                      {clsInfo.students.map((stud) => (
+                        <button
+                          key={stud.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveStudentId(stud.id);
+                            const today = new Date();
+                            setModalYear(today.getFullYear());
+                            setModalMonth(today.getMonth());
+                          }}
+                          className="text-[10px] bg-indigo-50/40 hover:bg-indigo-100/75 border border-indigo-100 hover:border-indigo-200 px-2 py-0.5 rounded-md font-bold text-indigo-700 transition-all cursor-pointer flex items-center gap-0.5"
+                          title="클릭하여 학생 달력 열기"
                         >
-                          {name}
-                        </span>
+                          <span>{stud.name}</span>
+                          <span className="text-[9px] text-indigo-400">🗓️</span>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -2014,28 +2136,49 @@ export default function App() {
                     </select>
                   </div>
 
-                  <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-indigo-100/50">
-                    <button
-                      id="modal-add-lesson-btn"
-                      type="button"
-                      onClick={() => handleAddLessonsStudent(modalLessonClassId)}
-                      disabled={!modalLessonClassId}
-                      className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex-1 text-center justify-center ${
-                        modalLessonClassId
-                          ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
-                          : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                      }`}
-                    >
-                      수업 추가
-                    </button>
-                    <button
-                      id="modal-remove-lesson-btn"
-                      type="button"
-                      onClick={handleRemoveLessonsStudent}
-                      className="text-xs font-bold px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition-colors cursor-pointer flex-1 text-center justify-center"
-                    >
-                      수업 제거
-                    </button>
+                  <div className="space-y-2 pt-2 border-t border-indigo-100/50">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        id="modal-add-lesson-btn"
+                        type="button"
+                        onClick={() => handleAddLessonsStudent(modalLessonClassId)}
+                        disabled={!modalLessonClassId}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex-1 text-center justify-center ${
+                          modalLessonClassId
+                            ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+                            : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                        }`}
+                      >
+                        수업 추가
+                      </button>
+                      <button
+                        id="modal-remove-lesson-btn"
+                        type="button"
+                        onClick={handleRemoveLessonsStudent}
+                        className="text-xs font-bold px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition-colors cursor-pointer flex-1 text-center justify-center"
+                      >
+                        수업 제거
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        id="modal-add-unavailable-btn"
+                        type="button"
+                        onClick={handleAddUnavailablesStudent}
+                        className="text-xs font-bold px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors cursor-pointer flex-1 text-center justify-center shadow-xs"
+                      >
+                        🚫 불가일 등록
+                      </button>
+                      <button
+                        id="modal-remove-unavailable-btn"
+                        type="button"
+                        onClick={handleRemoveUnavailablesStudent}
+                        className="text-xs font-bold px-3 py-1.5 bg-slate-600 hover:bg-slate-700 text-white rounded-lg transition-colors cursor-pointer flex-1 text-center justify-center shadow-xs"
+                      >
+                        불가일 해제
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2161,6 +2304,112 @@ export default function App() {
                     일괄 다운로드
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Class Edit Modal */}
+      {editingClass && (
+        <div
+          id="class-edit-modal"
+          className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200"
+          onClick={() => setEditingClass(null)}
+        >
+          <div
+            className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 border border-slate-100 relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-1.5">
+                <FolderPlus className="w-5 h-5 text-indigo-500" />
+                반 정보 수정
+              </h3>
+              <button
+                id="class-modal-close-btn"
+                type="button"
+                onClick={() => setEditingClass(null)}
+                className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="space-y-4">
+              {/* Class Name Input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500">반 이름</label>
+                <input
+                  id="editing-class-name-input"
+                  type="text"
+                  value={editingClassName}
+                  onChange={(e) => setEditingClassName(e.target.value)}
+                  placeholder="반 이름을 입력하세요"
+                  onKeyDown={(e) => e.key === "Enter" && handleSaveEditClass()}
+                  className="w-full border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl py-2 px-3.5 text-xs bg-white outline-none transition-colors font-bold text-slate-800"
+                />
+              </div>
+
+              {/* Class Color Grid */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500">반 색상 선택</label>
+                <div className="grid grid-cols-5 gap-2.5 p-2.5 bg-slate-50 border border-slate-100 rounded-xl">
+                  {SELECTABLE_COLORS.map((cOption) => {
+                    const isSelected = editingClassColor === cOption.color;
+                    return (
+                      <button
+                        key={cOption.name}
+                        type="button"
+                        onClick={() => setEditingClassColor(cOption.color)}
+                        className="flex flex-col items-center gap-1 p-1 rounded-lg hover:bg-white transition-colors cursor-pointer"
+                        title={cOption.name}
+                      >
+                        <span
+                          className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                            isSelected ? "ring-2 ring-indigo-500 ring-offset-2 scale-110 shadow-sm" : "hover:scale-105"
+                          }`}
+                          style={{ backgroundColor: cOption.color }}
+                        >
+                          {isSelected && <Check className="w-3.5 h-3.5 text-white stroke-[3.5px]" />}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-500 mt-0.5">{cOption.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex gap-2 mt-5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`"${editingClass.name}" 반을 삭제하시겠습니까?\n배정된 수업과 학생의 소속 반도 함께 미지정으로 변경됩니다.`)) {
+                    handleDeleteClass(editingClass.id);
+                    setEditingClass(null);
+                  }
+                }}
+                className="py-2.5 px-3.5 border border-rose-100 hover:bg-rose-50 hover:border-rose-200 text-rose-600 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                삭제
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingClass(null)}
+                className="flex-1 py-2.5 px-3.5 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditClass}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 px-3.5 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-sm"
+              >
+                저장
               </button>
             </div>
           </div>
