@@ -15,6 +15,7 @@ interface CalendarProps {
   year: number;
   month: number;
   onDateChange: (year: number, month: number) => void;
+  summaryDate?: string; // e.g. "YYYY-MM-DD"
 }
 
 export const Calendar: React.FC<CalendarProps> = ({
@@ -30,6 +31,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   year,
   month,
   onDateChange,
+  summaryDate,
 }) => {
   const years = useMemo(() => {
     const currentYear = new Date().getFullYear();
@@ -386,6 +388,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 const formattedDateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                 const isStudentMode = mode === "student";
                 const isUnavailable = isStudentMode && !!student?.unavailables?.[monthKey]?.includes(day);
+                const isSummaryDateActive = mode === "main" && summaryDate === formattedDateStr;
                 const hasLessonCount = isStudentMode && !!student?.baseDate;
                 const lessonCountText = hasLessonCount ? lessonCounts[formattedDateStr] : undefined;
                 const shouldShowLines = isStudentMode ? (hasLessonCount && !!lessonCountText) : displayLines.length > 0;
@@ -401,6 +404,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                     className={`relative aspect-auto min-h-[52px] xs:min-h-[58px] sm:aspect-square w-full flex flex-col items-center justify-between rounded-lg p-1 select-none transition-all cursor-pointer ${
                       isSelected
                         ? "bg-indigo-600 text-white font-bold ring-2 ring-indigo-300 shadow-md"
+                        : isSummaryDateActive
+                        ? "bg-indigo-50/40 border-2 border-indigo-500 text-indigo-900 font-bold shadow-xs hover:bg-indigo-100/40"
                         : isUnavailable
                         ? "bg-rose-50/60 border-rose-200 text-rose-700 hover:bg-rose-100/60"
                         : "bg-white border border-gray-100 text-gray-800 hover:bg-gray-50"

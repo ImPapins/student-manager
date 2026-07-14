@@ -82,6 +82,10 @@ export default function App() {
   const [mainYear, setMainYear] = useState<number>(new Date().getFullYear());
   const [mainMonth, setMainMonth] = useState<number>(new Date().getMonth());
   const [mainSelections, setMainSelections] = useState<MainSelections>({});
+  const [summaryDate, setSummaryDate] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
 
   // Modal / Student Calendar state
   const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
@@ -738,6 +742,10 @@ export default function App() {
 
   // --- Main Calendar Selections ---
   const handleToggleMainDay = (day: number) => {
+    // Set active summary date to clicked date
+    const formatted = `${mainYear}-${String(mainMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    setSummaryDate(formatted);
+
     const key = `${mainYear}-${mainMonth}`;
     const current = mainSelections[key] || [];
     let next: number[];
@@ -1148,17 +1156,20 @@ export default function App() {
     );
   };
 
-  // --- Today's Lesson Summary aggregation ---
-  const todayLessonSummary = useMemo(() => {
-    const today = new Date();
-    const key = `${today.getFullYear()}-${today.getMonth()}`;
-    const todayDate = today.getDate();
+  // --- Lesson Summary aggregation ---
+  const lessonSummary = useMemo(() => {
+    const parts = summaryDate.split("-");
+    const sYear = parseInt(parts[0], 10);
+    const sMonth = parseInt(parts[1], 10) - 1; // 0-indexed month
+    const sDay = parseInt(parts[2], 10);
+
+    const key = `${sYear}-${sMonth}`;
 
     const byClass: { [classId: string]: { name: string; color: string; students: { id: string; name: string }[] } } = {};
 
     students.forEach((s) => {
       if (!s.lessons || !s.lessons[key]) return;
-      const dayLessonClassId = s.lessons[key][todayDate];
+      const dayLessonClassId = s.lessons[key][sDay];
       if (!dayLessonClassId) return;
 
       const cls = classes.find((c) => c.id === dayLessonClassId);
@@ -1171,7 +1182,7 @@ export default function App() {
     });
 
     return Object.values(byClass);
-  }, [students, classes]);
+  }, [students, classes, summaryDate]);
 
   const activeStudent = useMemo(() => {
     return students.find((s) => s.id === activeStudentId) || null;
@@ -1883,23 +1894,62 @@ export default function App() {
             year={mainYear}
             month={mainMonth}
             onDateChange={handleMainDateChange}
+            summaryDate={summaryDate}
           />
 
-          {/* Today's Lesson Summary */}
+          {/* Lesson Summary */}
           <div
-            id="today-lesson-summary"
-            className="p-4 bg-slate-50 border border-slate-150 rounded-xl"
+            id="lesson-summary"
+            className="p-4 bg-slate-50 border border-indigo-100/80 rounded-xl space-y-3"
           >
-            <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2 flex items-center gap-1">
-              <FileCheck className="w-3.5 h-3.5" />
-              오늘 수업 요약
-            </h3>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100/50 pb-2">
+              <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
+                <FileCheck className="w-3.5 h-3.5 text-indigo-500" />
+                수업 요약
+              </h3>
+              
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={summaryDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val) {
+                      setSummaryDate(val);
+                      // Also sync the main calendar's view to the selected year/month
+                      const parts = val.split("-");
+                      const y = parseInt(parts[0], 10);
+                      const m = parseInt(parts[1], 10) - 1;
+                      setMainYear(y);
+                      setMainMonth(m);
+                    }
+                  }}
+                  className="text-xs font-bold border border-indigo-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg py-1 px-2 bg-white text-indigo-900 outline-none transition-colors cursor-pointer"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const today = new Date();
+                    const y = today.getFullYear();
+                    const m = today.getMonth();
+                    const d = today.getDate();
+                    const formatted = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+                    setSummaryDate(formatted);
+                    setMainYear(y);
+                    setMainMonth(m);
+                  }}
+                  className="text-[11px] font-bold px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg transition-colors cursor-pointer border border-indigo-200"
+                >
+                  오늘
+                </button>
+              </div>
+            </div>
 
-            {todayLessonSummary.length === 0 ? (
-              <p className="text-xs font-medium text-gray-400">오늘 예정된 수업이 없습니다.</p>
+            {lessonSummary.length === 0 ? (
+              <p className="text-xs font-medium text-gray-400">선택한 날짜에 예정된 수업이 없습니다.</p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {todayLessonSummary.map((clsInfo) => (
+                {lessonSummary.map((clsInfo) => (
                   <div
                     key={clsInfo.name}
                     className="bg-white border border-slate-200/60 p-3 rounded-lg shadow-2xs flex flex-col gap-1.5"
@@ -1920,9 +1970,11 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             setActiveStudentId(stud.id);
-                            const today = new Date();
-                            setModalYear(today.getFullYear());
-                            setModalMonth(today.getMonth());
+                            const parts = summaryDate.split("-");
+                            const sYear = parseInt(parts[0], 10);
+                            const sMonth = parseInt(parts[1], 10) - 1;
+                            setModalYear(sYear);
+                            setModalMonth(sMonth);
                           }}
                           className="text-[10px] bg-indigo-50/40 hover:bg-indigo-100/75 border border-indigo-100 hover:border-indigo-200 px-2 py-0.5 rounded-md font-bold text-indigo-700 transition-all cursor-pointer flex items-center gap-0.5"
                           title="클릭하여 학생 달력 열기"
